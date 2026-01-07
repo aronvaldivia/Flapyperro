@@ -5,7 +5,22 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI Flappy Bird Extreme</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        user-select: none;
+        background-color: #111827;
+      }
+      @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: .5; }
+      }
+      @keyframes ping {
+        75%, 100% { transform: scale(2); opacity: 0; }
+      }
+    </style>
 <script type="importmap">
 {
   "imports": {
@@ -17,7 +32,7 @@
 }
 </script>
 </head>
-<body class="bg-gray-900 m-0 p-0 overflow-hidden select-none">
+<body>
     <div id="root"></div>
 </body>
 </html>
