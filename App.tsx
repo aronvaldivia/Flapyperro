@@ -11,7 +11,7 @@ const ASSETS = {
   birdHit: "https://mcusercontent.com/17635adc15e4488859eb5650d/images/99f9b0ff-54fd-c80b-2655-ee8c65074d5c.png",
   pipe: "https://mcusercontent.com/17635adc15e4488859eb5650d/images/29baa4f1-d166-cf53-ee0e-9d0b81766eae.png",
   crate: "https://mcusercontent.com/17635adc15e4488859eb5650d/images/8720b6a8-c420-6e43-6981-d7e5a38155e8.png",
-  bg: "https://mcusercontent.com/17635adc15e4488859eb5650d/images/a8c1d554-45f7-e8c3-9f83-fbb535abb8be.png"
+  bg: "https://mcusercontent.com/17635adc15e4488859eb5650d/images/d6b3776a-5459-4dc9-9c37-63489e9b53ed.png"
 };
 
 interface Projectile {
@@ -27,6 +27,8 @@ interface Crate {
   size: number;
   active: boolean;
 }
+
+const FIRE_RATE = 150; 
 
 const App: React.FC = () => {
   const [status, setStatus] = useState<GameStatus>(GameStatus.START);
@@ -49,7 +51,10 @@ const App: React.FC = () => {
   const frameId = useRef<number>(0);
   const lastPipeSpawn = useRef<number>(0);
   const shootTimer = useRef<number>(0);
+  const lastFiredTime = useRef<number>(0);
   const isDead = useRef<boolean>(false);
+  
+  const keysPressed = useRef<Record<string, boolean>>({});
 
   useEffect(() => {
     let loadedCount = 0;
@@ -85,6 +90,7 @@ const App: React.FC = () => {
   const handleGameOver = useCallback(async (finalScore: number) => {
     if (isDead.current) return;
     isDead.current = true;
+    keysPressed.current = {}; 
     triggerScreenShake();
     
     setTimeout(async () => {
@@ -128,7 +134,9 @@ const App: React.FC = () => {
     projectiles.current = [];
     crates.current = [];
     shootTimer.current = 0;
+    lastFiredTime.current = 0;
     isDead.current = false;
+    keysPressed.current = {};
     setScore(0);
     setRoast("");
     setStatus(GameStatus.PLAYING);
@@ -143,43 +151,61 @@ const App: React.FC = () => {
     }
   }, [status, countdown, runCountdown]);
 
-  const shoot = useCallback(() => {
-    if (status === GameStatus.PLAYING) {
-      projectiles.current.push({
-        x: 50 + BIRD_SIZE,
-        y: birdY.current + BIRD_SIZE / 2,
-        speed: 12,
-        active: true
-      });
-      // shootTimer reduced to make animation snappier
-      shootTimer.current = 8; 
-    }
-  }, [status]);
+  const fireSingleProjectile = useCallback(() => {
+    projectiles.current.push({
+      x: 50 + BIRD_SIZE * 0.8,
+      y: birdY.current + BIRD_SIZE / 2,
+      speed: 12,
+      active: true
+    });
+    shootTimer.current = 6; 
+  }, []);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.code === 'Space') { e.preventDefault(); jump(); }
-      if (e.code === 'KeyF') { e.preventDefault(); shoot(); }
+      keysPressed.current[e.code] = true;
+      if (e.code === 'Space') { 
+        e.preventDefault(); 
+        jump(); 
+      }
+      if (e.code === 'KeyF') {
+        e.preventDefault();
+      }
+    };
+    const handleKeyUp = (e: KeyboardEvent) => {
+      keysPressed.current[e.code] = false;
     };
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [jump, shoot]);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, [jump]);
 
   const update = useCallback((timestamp: number) => {
     if (status !== GameStatus.PLAYING) return;
+
+    if (keysPressed.current['KeyF']) {
+      if (timestamp - lastFiredTime.current > FIRE_RATE) {
+        fireSingleProjectile();
+        lastFiredTime.current = timestamp;
+      }
+    }
 
     if (shootTimer.current > 0) shootTimer.current--;
 
     birdVelocity.current += DEFAULT_SETTINGS.gravity;
     birdY.current += birdVelocity.current;
 
-    if (birdY.current < 0 || birdY.current + BIRD_SIZE > CANVAS_HEIGHT) {
+    // Hitbox suelo/techo también permisivo
+    if (birdY.current < -10 || birdY.current + BIRD_SIZE > CANVAS_HEIGHT + 10) {
       handleGameOver(score);
       return;
     }
 
     if (timestamp - lastPipeSpawn.current > DEFAULT_SETTINGS.pipeSpawnRate) {
-      const minPipeH = 60;
+      const minPipeH = 80;
       const gap = DEFAULT_SETTINGS.gapSize;
       const topHeight = Math.floor(Math.random() * (CANVAS_HEIGHT - gap - 2 * minPipeH)) + minPipeH;
       
@@ -187,33 +213,49 @@ const App: React.FC = () => {
 
       if (Math.random() > 0.4) {
         const crateSize = 40;
-        const yOffset = Math.random() > 0.5 ? 10 : gap - crateSize - 10;
-        crates.current.push({ x: CANVAS_WIDTH + 100, y: topHeight + yOffset, size: crateSize, active: true });
+        const yOffset = Math.random() > 0.5 ? 15 : gap - crateSize - 15;
+        crates.current.push({ x: CANVAS_WIDTH + 120, y: topHeight + yOffset, size: crateSize, active: true });
       }
       lastPipeSpawn.current = timestamp;
     }
 
-    const checkCollision = (r1: any, r2: any) => {
-      const p1 = (1 - HITBOX_MARGIN) / 2;
-      const p2 = (1 - HITBOX_MARGIN) / 2;
-      const b1 = { l: r1.x + r1.w * p1, r: r1.x + r1.w * (1 - p1), t: r1.y + r1.h * p1, b: r1.y + r1.h * (1 - p1) };
-      const b2 = { l: r2.x + r2.w * p2, r: r2.x + r2.w * (1 - p2), t: r2.y + r2.h * p2, b: r2.y + r2.h * (1 - p2) };
-      return !(b1.l > b2.r || b1.r < b2.l || b1.t > b2.b || b1.b < b2.t);
+    /**
+     * Función de colisión pulida:
+     * bird: hitbox central reducida por HITBOX_MARGIN
+     * obs: hitbox de obstáculos reducida lateralmente por un pequeño margen (4px)
+     */
+    const checkCollision = (bird: any, obs: any) => {
+      const margin = (1 - HITBOX_MARGIN) / 2;
+      const bH = { 
+        l: bird.x + bird.w * margin, 
+        r: bird.x + bird.w * (1 - margin), 
+        t: bird.y + bird.h * margin, 
+        b: bird.y + bird.h * (1 - margin) 
+      };
+      
+      // Margen de seguridad extra para los obstáculos (4px de "aire" permitido)
+      const obsSafeMargin = 4;
+      const oH = { 
+        l: obs.x + obsSafeMargin, 
+        r: obs.x + obs.w - obsSafeMargin, 
+        t: obs.y + obsSafeMargin, 
+        b: obs.y + obs.h - obsSafeMargin 
+      };
+      
+      return !(bH.l > oH.r || bH.r < oH.l || bH.t > oH.b || bH.b < oH.t);
     };
 
     const birdRect = { x: 50, y: birdY.current, w: BIRD_SIZE, h: BIRD_SIZE };
 
-    // Update Projectiles with better collision for crates
     projectiles.current = projectiles.current.filter(p => {
       if (!p.active) return false;
       p.x += p.speed;
       
-      let hit = false;
       crates.current.forEach(c => {
+        // Colisión de bala contra caja (más precisa)
         if (c.active && p.x >= c.x && p.x <= c.x + c.size && p.y >= c.y && p.y <= c.y + c.size) {
           c.active = false;
           setScore(s => s + 5);
-          hit = true;
           p.active = false;
         }
       });
@@ -230,11 +272,15 @@ const App: React.FC = () => {
     pipes.current = pipes.current.filter(p => {
       p.x -= DEFAULT_SETTINGS.pipeSpeed;
       if (!p.passed && p.x + p.width < 50) { p.passed = true; setScore(s => s + 1); }
+      
+      // Colisión con tubería superior
       if (checkCollision(birdRect, { x: p.x, y: 0, w: p.width, h: p.topHeight })) handleGameOver(score);
+      // Colisión con tubería inferior
       if (checkCollision(birdRect, { x: p.x, y: p.bottomY, w: p.width, h: CANVAS_HEIGHT - p.bottomY })) handleGameOver(score);
+      
       return p.x + p.width > 0;
     });
-  }, [status, score, handleGameOver]);
+  }, [status, score, handleGameOver, fireSingleProjectile]);
 
   const draw = useCallback(() => {
     const ctx = canvasRef.current?.getContext('2d');
@@ -261,7 +307,6 @@ const App: React.FC = () => {
       if (c.active && images.current.crate) ctx.drawImage(images.current.crate, c.x, c.y, c.size, c.size);
     });
 
-    // Draw Bullets with a glow effect
     projectiles.current.forEach(p => { 
       if (!p.active) return;
       ctx.fillStyle = '#fef08a';
@@ -273,15 +318,13 @@ const App: React.FC = () => {
       ctx.shadowBlur = 0;
     });
 
-    // REFINED ANIMATION LOGIC: Priority based but visually distinct
     let birdImg = images.current.birdNeutral;
+    
     if (isDead.current) {
       birdImg = images.current.birdHit;
-    } else if (shootTimer.current > 0) {
-      // Shooting has priority for action feedback
+    } else if (keysPressed.current['KeyF'] || shootTimer.current > 0) {
       birdImg = images.current.birdShoot;
     } else if (birdVelocity.current < 0) {
-      // Ascending (Jumping)
       birdImg = images.current.birdJump;
     }
 
@@ -334,18 +377,18 @@ const App: React.FC = () => {
 
         {status === GameStatus.START && countdown === null && (
           <div className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center text-white text-center p-8 backdrop-blur-[2px]">
-            <h1 className="text-5xl font-black mb-6 tracking-tighter text-yellow-400 drop-shadow-lg uppercase italic">Flappy Strike</h1>
+            <h1 className="text-5xl font-black mb-6 tracking-tighter text-yellow-400 drop-shadow-lg uppercase italic text-center">FLAPPY<br/>STRIKE</h1>
             <div className="grid grid-cols-2 gap-4 mb-8">
               <div className="bg-white/10 p-3 rounded-lg border border-white/20">
                 <p className="text-xs uppercase font-bold opacity-70 mb-1">Volar</p>
                 <p className="text-sm font-bold">ESPACIO</p>
               </div>
               <div className="bg-white/10 p-3 rounded-lg border border-white/20">
-                <p className="text-xs uppercase font-bold opacity-70 mb-1">Disparar</p>
-                <p className="text-sm font-bold">TECLA F</p>
+                <p className="text-xs uppercase font-bold opacity-70 mb-1">Ráfaga</p>
+                <p className="text-sm font-bold">MANTENER F</p>
               </div>
             </div>
-            <p className="text-xl animate-bounce font-bold">¡HAZ CLICK PARA EMPEZAR!</p>
+            <p className="text-xl animate-bounce font-bold">¡CLICK PARA EMPEZAR!</p>
           </div>
         )}
 
@@ -375,14 +418,11 @@ const App: React.FC = () => {
               className="group relative bg-yellow-400 hover:bg-yellow-300 text-black font-black py-4 px-12 rounded-full transition-all shadow-[0_0_30px_rgba(234,179,8,0.4)] hover:scale-110 active:scale-95"
             >
               REINTENTAR
-              <span className="absolute -top-1 -right-1 flex h-4 w-4">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-yellow-400 opacity-75"></span>
-              </span>
             </button>
           </div>
         )}
       </div>
-      <p className="mt-4 text-gray-500 text-[10px] font-mono tracking-widest uppercase">Precision Combat v2.1 • Hitbox: {HITBOX_MARGIN * 100}%</p>
+      <p className="mt-4 text-gray-500 text-[10px] font-mono tracking-widest uppercase">Precision Combat v2.4 • Polished Hitboxes • Size: {BIRD_SIZE}px</p>
     </div>
   );
 };

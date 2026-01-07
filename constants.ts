@@ -3,10 +3,10 @@ import { GameSettings } from './types';
 
 export const CANVAS_WIDTH = 400;
 export const CANVAS_HEIGHT = 600;
-export const BIRD_SIZE = 40;
+export const BIRD_SIZE = 50;
 
-// NEW: Hitbox scaling (0.8 means 80% of the visual size)
-export const HITBOX_MARGIN = 0.8; 
+// Ajustado de 0.8 a 0.75 para que el hitbox sea más permisivo (75% del tamaño visual)
+export const HITBOX_MARGIN = 0.75; 
 export const SHAKE_INTENSITY = 10;
 export const SHAKE_DURATION = 300; // ms
 
@@ -15,7 +15,7 @@ export const DEFAULT_SETTINGS: GameSettings = {
   jumpStrength: -6,
   pipeSpeed: 3,
   pipeSpawnRate: 1500, // ms
-  gapSize: 170 // Increased slightly for fair play
+  gapSize: 170 
 };
 
 export const COLORS = {
