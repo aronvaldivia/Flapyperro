@@ -4,11 +4,14 @@ import { GameStatus, Pipe } from './types';
 import { CANVAS_WIDTH, CANVAS_HEIGHT, BIRD_SIZE, DEFAULT_SETTINGS, HITBOX_MARGIN, SHAKE_INTENSITY, SHAKE_DURATION } from './constants';
 import { generateDeathRoast } from './services/geminiService';
 
-// Assets con mejor compatibilidad CORS para producción en Netlify
 const ASSETS = {
-  bird: "https://raw.githubusercontent.com/samuelcust/flappy-bird-assets/master/sprites/yellowbird-midflap.png",
-  pipe: "https://raw.githubusercontent.com/samuelcust/flappy-bird-assets/master/sprites/pipe-green.png",
-  bg: "https://raw.githubusercontent.com/samuelcust/flappy-bird-assets/master/sprites/background-day.png"
+  birdNeutral: "https://mcusercontent.com/17635adc15e4488859eb5650d/images/3dea103d-2032-6fb4-d066-ce533bda3d96.png",
+  birdJump: "https://mcusercontent.com/17635adc15e4488859eb5650d/images/4c920652-fcc0-70b3-fd5f-382d0ffdcace.png",
+  birdShoot: "https://mcusercontent.com/17635adc15e4488859eb5650d/images/b1b6c65a-9b17-0c4a-72be-7384c1979f0e.png",
+  birdHit: "https://mcusercontent.com/17635adc15e4488859eb5650d/images/99f9b0ff-54fd-c80b-2655-ee8c65074d5c.png",
+  pipe: "https://mcusercontent.com/17635adc15e4488859eb5650d/images/29baa4f1-d166-cf53-ee0e-9d0b81766eae.png",
+  crate: "https://mcusercontent.com/17635adc15e4488859eb5650d/images/8720b6a8-c420-6e43-6981-d7e5a38155e8.png",
+  bg: "https://mcusercontent.com/17635adc15e4488859eb5650d/images/a8c1d554-45f7-e8c3-9f83-fbb535abb8be.png"
 };
 
 interface Projectile {
@@ -24,8 +27,6 @@ interface Crate {
   size: number;
   active: boolean;
 }
-
-const FIRE_RATE = 150; 
 
 const App: React.FC = () => {
   const [status, setStatus] = useState<GameStatus>(GameStatus.START);
@@ -48,37 +49,20 @@ const App: React.FC = () => {
   const frameId = useRef<number>(0);
   const lastPipeSpawn = useRef<number>(0);
   const shootTimer = useRef<number>(0);
-  const lastFiredTime = useRef<number>(0);
   const isDead = useRef<boolean>(false);
-  
-  const keysPressed = useRef<Record<string, boolean>>({});
 
   useEffect(() => {
     let loadedCount = 0;
     const entries = Object.entries(ASSETS);
-    
-    const timeout = setTimeout(() => {
-      if (loading) setLoading(false);
-    }, 2000);
-
     entries.forEach(([key, url]) => {
       const img = new Image();
-      img.crossOrigin = "anonymous";
       img.src = url;
       img.onload = () => {
         loadedCount++;
         images.current[key] = img;
-        if (loadedCount === entries.length) {
-          clearTimeout(timeout);
-          setLoading(false);
-        }
-      };
-      img.onerror = () => {
-        loadedCount++;
         if (loadedCount === entries.length) setLoading(false);
       };
     });
-    return () => clearTimeout(timeout);
   }, []);
 
   const triggerScreenShake = () => {
@@ -101,7 +85,6 @@ const App: React.FC = () => {
   const handleGameOver = useCallback(async (finalScore: number) => {
     if (isDead.current) return;
     isDead.current = true;
-    keysPressed.current = {}; 
     triggerScreenShake();
     
     setTimeout(async () => {
@@ -121,8 +104,10 @@ const App: React.FC = () => {
     projectiles.current = [];
     crates.current = [];
     isDead.current = false;
+    
     setCountdown(3);
     setStatus(GameStatus.START);
+    
     const timer = setInterval(() => {
       setCountdown(prev => {
         if (prev === 1) {
@@ -143,9 +128,7 @@ const App: React.FC = () => {
     projectiles.current = [];
     crates.current = [];
     shootTimer.current = 0;
-    lastFiredTime.current = 0;
     isDead.current = false;
-    keysPressed.current = {};
     setScore(0);
     setRoast("");
     setStatus(GameStatus.PLAYING);
@@ -153,175 +136,165 @@ const App: React.FC = () => {
   };
 
   const jump = useCallback(() => {
-    if (status === GameStatus.START && countdown === null) runCountdown();
-    else if (status === GameStatus.PLAYING) birdVelocity.current = DEFAULT_SETTINGS.jumpStrength;
+    if (status === GameStatus.START && countdown === null) {
+      runCountdown();
+    } else if (status === GameStatus.PLAYING) {
+      birdVelocity.current = DEFAULT_SETTINGS.jumpStrength;
+    }
   }, [status, countdown, runCountdown]);
 
-  const fireSingleProjectile = useCallback(() => {
-    projectiles.current.push({
-      x: 70,
-      y: birdY.current + BIRD_SIZE / 2,
-      speed: 12,
-      active: true
-    });
-    shootTimer.current = 6; 
-  }, []);
+  const shoot = useCallback(() => {
+    if (status === GameStatus.PLAYING) {
+      projectiles.current.push({
+        x: 50 + BIRD_SIZE,
+        y: birdY.current + BIRD_SIZE / 2,
+        speed: 12,
+        active: true
+      });
+      // shootTimer reduced to make animation snappier
+      shootTimer.current = 8; 
+    }
+  }, [status]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.code === 'Space') { e.preventDefault(); jump(); }
-      keysPressed.current[e.code] = true;
+      if (e.code === 'KeyF') { e.preventDefault(); shoot(); }
     };
-    const handleKeyUp = (e: KeyboardEvent) => { keysPressed.current[e.code] = false; };
     window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('keyup', handleKeyUp);
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('keyup', handleKeyUp);
-    };
-  }, [jump]);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [jump, shoot]);
 
   const update = useCallback((timestamp: number) => {
     if (status !== GameStatus.PLAYING) return;
-    if (keysPressed.current['KeyF'] && timestamp - lastFiredTime.current > FIRE_RATE) {
-      fireSingleProjectile();
-      lastFiredTime.current = timestamp;
-    }
+
     if (shootTimer.current > 0) shootTimer.current--;
 
     birdVelocity.current += DEFAULT_SETTINGS.gravity;
     birdY.current += birdVelocity.current;
 
-    if (birdY.current < -50 || birdY.current > CANVAS_HEIGHT + 50) {
+    if (birdY.current < 0 || birdY.current + BIRD_SIZE > CANVAS_HEIGHT) {
       handleGameOver(score);
       return;
     }
 
     if (timestamp - lastPipeSpawn.current > DEFAULT_SETTINGS.pipeSpawnRate) {
-      const minPipeH = 100;
+      const minPipeH = 60;
       const gap = DEFAULT_SETTINGS.gapSize;
       const topHeight = Math.floor(Math.random() * (CANVAS_HEIGHT - gap - 2 * minPipeH)) + minPipeH;
-      pipes.current.push({ x: CANVAS_WIDTH, topHeight, bottomY: topHeight + gap, width: 70, passed: false });
       
+      pipes.current.push({ x: CANVAS_WIDTH, topHeight, bottomY: topHeight + gap, width: 70, passed: false });
+
       if (Math.random() > 0.4) {
-        crates.current.push({ x: CANVAS_WIDTH + 150, y: topHeight + gap/2 - 20, size: 40, active: true });
+        const crateSize = 40;
+        const yOffset = Math.random() > 0.5 ? 10 : gap - crateSize - 10;
+        crates.current.push({ x: CANVAS_WIDTH + 100, y: topHeight + yOffset, size: crateSize, active: true });
       }
       lastPipeSpawn.current = timestamp;
     }
 
-    const margin = (1 - HITBOX_MARGIN) / 2;
-    const bHit = { 
-      l: 50 + BIRD_SIZE * margin, 
-      r: 50 + BIRD_SIZE * (1 - margin), 
-      t: birdY.current + BIRD_SIZE * margin, 
-      b: birdY.current + BIRD_SIZE * (1 - margin) 
+    const checkCollision = (r1: any, r2: any) => {
+      const p1 = (1 - HITBOX_MARGIN) / 2;
+      const p2 = (1 - HITBOX_MARGIN) / 2;
+      const b1 = { l: r1.x + r1.w * p1, r: r1.x + r1.w * (1 - p1), t: r1.y + r1.h * p1, b: r1.y + r1.h * (1 - p1) };
+      const b2 = { l: r2.x + r2.w * p2, r: r2.x + r2.w * (1 - p2), t: r2.y + r2.h * p2, b: r2.y + r2.h * (1 - p2) };
+      return !(b1.l > b2.r || b1.r < b2.l || b1.t > b2.b || b1.b < b2.t);
     };
 
+    const birdRect = { x: 50, y: birdY.current, w: BIRD_SIZE, h: BIRD_SIZE };
+
+    // Update Projectiles with better collision for crates
     projectiles.current = projectiles.current.filter(p => {
+      if (!p.active) return false;
       p.x += p.speed;
+      
+      let hit = false;
       crates.current.forEach(c => {
-        if (c.active && p.x > c.x && p.x < c.x + c.size && p.y > c.y && p.y < c.y + c.size) {
-          c.active = false; setScore(s => s + 5); p.active = false;
+        if (c.active && p.x >= c.x && p.x <= c.x + c.size && p.y >= c.y && p.y <= c.y + c.size) {
+          c.active = false;
+          setScore(s => s + 5);
+          hit = true;
+          p.active = false;
         }
       });
+      
       return p.active && p.x < CANVAS_WIDTH;
     });
 
     crates.current = crates.current.filter(c => {
       c.x -= DEFAULT_SETTINGS.pipeSpeed;
-      if (c.active && !(bHit.l > c.x + c.size || bHit.r < c.x || bHit.t > c.y + c.size || bHit.b < c.y)) handleGameOver(score);
+      if (c.active && checkCollision(birdRect, { x: c.x, y: c.y, w: c.size, h: c.size })) handleGameOver(score);
       return c.x + c.size > 0;
     });
 
     pipes.current = pipes.current.filter(p => {
       p.x -= DEFAULT_SETTINGS.pipeSpeed;
-      if (!p.passed && p.x < 50) { p.passed = true; setScore(s => s + 1); }
-      const topCol = !(bHit.l > p.x + p.width || bHit.r < p.x || bHit.t > p.topHeight || bHit.b < 0);
-      const botCol = !(bHit.l > p.x + p.width || bHit.r < p.x || bHit.t > CANVAS_HEIGHT || bHit.b < p.bottomY);
-      if (topCol || botCol) handleGameOver(score);
+      if (!p.passed && p.x + p.width < 50) { p.passed = true; setScore(s => s + 1); }
+      if (checkCollision(birdRect, { x: p.x, y: 0, w: p.width, h: p.topHeight })) handleGameOver(score);
+      if (checkCollision(birdRect, { x: p.x, y: p.bottomY, w: p.width, h: CANVAS_HEIGHT - p.bottomY })) handleGameOver(score);
       return p.x + p.width > 0;
     });
-  }, [status, score, handleGameOver, fireSingleProjectile]);
+  }, [status, score, handleGameOver]);
 
   const draw = useCallback(() => {
     const ctx = canvasRef.current?.getContext('2d');
-    if (!ctx) return;
+    if (!ctx || loading) return;
 
     ctx.save();
     ctx.translate(screenShake.x, screenShake.y);
 
-    // Fondo: Imagen o color sólido de respaldo
-    if (images.current.bg && images.current.bg.complete && images.current.bg.naturalWidth > 0) {
-      ctx.drawImage(images.current.bg, 0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-    } else {
-      ctx.fillStyle = '#70c5ce';
-      ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-    }
+    if (images.current.bg) ctx.drawImage(images.current.bg, 0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+    else { ctx.fillStyle = '#70c5ce'; ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT); }
 
-    // Tuberías: Imagen o dibujo procedural
     pipes.current.forEach(p => {
-      if (images.current.pipe && images.current.pipe.complete && images.current.pipe.naturalWidth > 0) {
-        // Top pipe (invertida)
+      if (images.current.pipe) {
         ctx.save();
-        ctx.translate(p.x + p.width/2, p.topHeight/2);
+        ctx.translate(p.x + p.width / 2, p.topHeight / 2);
         ctx.scale(1, -1);
-        ctx.drawImage(images.current.pipe, -p.width/2, -p.topHeight/2, p.width, p.topHeight);
+        ctx.drawImage(images.current.pipe, -p.width / 2, -p.topHeight / 2, p.width, p.topHeight);
         ctx.restore();
-        // Bottom pipe
         ctx.drawImage(images.current.pipe, p.x, p.bottomY, p.width, CANVAS_HEIGHT - p.bottomY);
-      } else {
-        ctx.fillStyle = '#73bf2e';
-        ctx.strokeStyle = '#000';
-        ctx.lineWidth = 2;
-        ctx.fillRect(p.x, 0, p.width, p.topHeight);
-        ctx.strokeRect(p.x, 0, p.width, p.topHeight);
-        ctx.fillRect(p.x, p.bottomY, p.width, CANVAS_HEIGHT - p.bottomY);
-        ctx.strokeRect(p.x, p.bottomY, p.width, CANVAS_HEIGHT - p.bottomY);
       }
     });
 
-    // Cajas
     crates.current.forEach(c => {
-      if (c.active) {
-        ctx.fillStyle = '#8b4513';
-        ctx.fillRect(c.x, c.y, c.size, c.size);
-        ctx.strokeStyle = '#fff';
-        ctx.strokeRect(c.x + 5, c.y + 5, c.size - 10, c.size - 10);
-      }
+      if (c.active && images.current.crate) ctx.drawImage(images.current.crate, c.x, c.y, c.size, c.size);
     });
 
-    // Proyectiles
-    projectiles.current.forEach(p => {
+    // Draw Bullets with a glow effect
+    projectiles.current.forEach(p => { 
       if (!p.active) return;
-      ctx.fillStyle = '#ffff00';
+      ctx.fillStyle = '#fef08a';
       ctx.shadowBlur = 10;
       ctx.shadowColor = 'yellow';
-      ctx.beginPath(); ctx.arc(p.x, p.y, 4, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); 
+      ctx.arc(p.x, p.y, 5, 0, Math.PI * 2); 
+      ctx.fill(); 
       ctx.shadowBlur = 0;
     });
 
-    // Pájaro
-    ctx.save();
-    ctx.translate(50 + BIRD_SIZE/2, birdY.current + BIRD_SIZE/2);
-    ctx.rotate(Math.min(Math.PI/4, Math.max(-Math.PI/4, birdVelocity.current * 0.1)));
-    
-    if (images.current.bird && images.current.bird.complete && images.current.bird.naturalWidth > 0) {
-      ctx.drawImage(images.current.bird, -BIRD_SIZE/2, -BIRD_SIZE/2, BIRD_SIZE, BIRD_SIZE);
-    } else {
-      ctx.fillStyle = isDead.current ? '#ff4444' : '#f3e100';
-      ctx.fillRect(-BIRD_SIZE/2, -BIRD_SIZE/2, BIRD_SIZE, BIRD_SIZE);
-      ctx.strokeStyle = '#000';
-      ctx.lineWidth = 2;
-      ctx.strokeRect(-BIRD_SIZE/2, -BIRD_SIZE/2, BIRD_SIZE, BIRD_SIZE);
+    // REFINED ANIMATION LOGIC: Priority based but visually distinct
+    let birdImg = images.current.birdNeutral;
+    if (isDead.current) {
+      birdImg = images.current.birdHit;
+    } else if (shootTimer.current > 0) {
+      // Shooting has priority for action feedback
+      birdImg = images.current.birdShoot;
+    } else if (birdVelocity.current < 0) {
+      // Ascending (Jumping)
+      birdImg = images.current.birdJump;
     }
-    ctx.restore();
 
-    // UI Score
+    if (birdImg) ctx.drawImage(birdImg, 50, birdY.current, BIRD_SIZE, BIRD_SIZE);
+
     if (status === GameStatus.PLAYING) {
-      ctx.fillStyle = 'white'; ctx.font = 'bold 48px Arial'; ctx.textAlign = 'center';
-      ctx.strokeStyle = 'black'; ctx.lineWidth = 6;
-      ctx.strokeText(score.toString(), CANVAS_WIDTH/2, 80);
-      ctx.fillText(score.toString(), CANVAS_WIDTH/2, 80);
+      ctx.fillStyle = 'white';
+      ctx.font = 'bold 36px Arial';
+      ctx.textAlign = 'center';
+      ctx.strokeStyle = 'black';
+      ctx.lineWidth = 5;
+      ctx.strokeText(score.toString(), CANVAS_WIDTH / 2, 60);
+      ctx.fillText(score.toString(), CANVAS_WIDTH / 2, 60);
     }
     ctx.restore();
   }, [status, score, loading, screenShake]);
@@ -338,49 +311,78 @@ const App: React.FC = () => {
   }, [loop]);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', backgroundColor: '#030712', padding: '1rem', color: 'white', fontFamily: 'sans-serif' }}>
-      <div style={{ position: 'relative', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)', borderRadius: '1.5rem', overflow: 'hidden', border: '8px solid #1f2937', width: CANVAS_WIDTH, height: CANVAS_HEIGHT, cursor: 'pointer' }}
+    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-950 p-4">
+      <div className="relative shadow-[0_0_50px_rgba(0,0,0,0.5)] border-4 border-gray-800 rounded-2xl overflow-hidden bg-black"
+           style={{ width: CANVAS_WIDTH, height: CANVAS_HEIGHT }}
            onClick={jump}>
-        <canvas ref={canvasRef} width={CANVAS_WIDTH} height={CANVAS_HEIGHT} />
         
-        {status === GameStatus.START && countdown === null && (
-          <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.4)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '2rem', backdropFilter: 'blur(4px)' }}>
-            <h1 style={{ fontSize: '3.75rem', fontWeight: 900, marginBottom: '1rem', color: '#facc15', fontStyle: 'italic', textShadow: '0 10px 15px rgba(0,0,0,0.5)' }}>FLAPPY<br/>STRIKE</h1>
-            <div style={{ backgroundColor: 'rgba(255,255,255,0.1)', padding: '1rem', borderRadius: '1rem', marginBottom: '2rem', border: '1px solid rgba(255,255,255,0.2)' }}>
-              <p style={{ fontSize: '0.875rem', fontWeight: 'bold', textTransform: 'uppercase', opacity: 0.7 }}>Controles</p>
-              <div style={{ display: 'flex', gap: '1rem', marginTop: '0.5rem' }}>
-                <span style={{ padding: '0.25rem 0.75rem', backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: '0.25rem', fontSize: '0.75rem' }}>SPACE - SALTO</span>
-                <span style={{ padding: '0.25rem 0.75rem', backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: '0.25rem', fontSize: '0.75rem' }}>F - FUEGO</span>
-              </div>
-            </div>
-            <p style={{ fontSize: '1.5rem', fontWeight: 900, animation: 'pulse 2s infinite' }}>CLICK PARA EMPEZAR</p>
+        <canvas ref={canvasRef} width={CANVAS_WIDTH} height={CANVAS_HEIGHT} />
+
+        {loading && (
+          <div className="absolute inset-0 flex items-center justify-center bg-gray-900 text-white font-bold italic animate-pulse">
+            CARGANDO ASSETS...
           </div>
         )}
 
         {countdown !== null && (
-          <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <span style={{ fontSize: '8rem', fontWeight: 900, fontStyle: 'italic', animation: 'ping 1s cubic-bezier(0, 0, 0.2, 1) infinite' }}>{countdown}</span>
+          <div className="absolute inset-0 flex items-center justify-center bg-black/20 pointer-events-none z-50">
+            <span key={countdown} className="text-white text-9xl font-black italic drop-shadow-[0_10px_10px_rgba(0,0,0,0.8)] animate-[ping_0.8s_ease-in-out_infinite]">
+              {countdown}
+            </span>
+          </div>
+        )}
+
+        {status === GameStatus.START && countdown === null && (
+          <div className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center text-white text-center p-8 backdrop-blur-[2px]">
+            <h1 className="text-5xl font-black mb-6 tracking-tighter text-yellow-400 drop-shadow-lg uppercase italic">Flappy Strike</h1>
+            <div className="grid grid-cols-2 gap-4 mb-8">
+              <div className="bg-white/10 p-3 rounded-lg border border-white/20">
+                <p className="text-xs uppercase font-bold opacity-70 mb-1">Volar</p>
+                <p className="text-sm font-bold">ESPACIO</p>
+              </div>
+              <div className="bg-white/10 p-3 rounded-lg border border-white/20">
+                <p className="text-xs uppercase font-bold opacity-70 mb-1">Disparar</p>
+                <p className="text-sm font-bold">TECLA F</p>
+              </div>
+            </div>
+            <p className="text-xl animate-bounce font-bold">¡HAZ CLICK PARA EMPEZAR!</p>
           </div>
         )}
 
         {status === GameStatus.GAME_OVER && (
-          <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(69, 10, 10, 0.9)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '2rem' }}>
-            <h2 style={{ fontSize: '4rem', fontWeight: 900, marginBottom: '1rem', fontStyle: 'italic' }}>FALLASTE</h2>
-            <div style={{ display: 'flex', gap: '3rem', marginBottom: '2rem' }}>
-              <div style={{ textAlign: 'center' }}><p style={{ fontSize: '0.75rem', textTransform: 'uppercase', opacity: 0.6 }}>Score</p><p style={{ fontSize: '3rem', fontWeight: 900, color: '#facc15' }}>{score}</p></div>
-              <div style={{ textAlign: 'center' }}><p style={{ fontSize: '0.75rem', textTransform: 'uppercase', opacity: 0.6 }}>Record</p><p style={{ fontSize: '3rem', fontWeight: 900, color: '#60a5fa' }}>{highScore}</p></div>
+          <div className="absolute inset-0 bg-black/85 flex flex-col items-center justify-center text-white text-center p-8 backdrop-blur-xl animate-in fade-in zoom-in duration-300">
+            <h2 className="text-6xl font-black mb-2 text-red-600 drop-shadow-[0_4px_0_rgba(0,0,0,1)]">GAMEOVER</h2>
+            <div className="flex gap-10 my-6">
+              <div>
+                <p className="text-xs uppercase font-bold opacity-50">Score</p>
+                <p className="text-4xl font-black text-yellow-400">{score}</p>
+              </div>
+              <div>
+                <p className="text-xs uppercase font-bold opacity-50">Best</p>
+                <p className="text-4xl font-black text-blue-400">{highScore}</p>
+              </div>
             </div>
-            <div style={{ backgroundColor: 'rgba(0,0,0,0.5)', padding: '1.5rem', borderRadius: '1rem', fontStyle: 'italic', fontSize: '1.125rem', marginBottom: '2rem', width: '100%', border: '1px solid rgba(255,255,255,0.1)', position: 'relative', textAlign: 'center', minHeight: '80px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <span style={{ position: 'absolute', top: '-0.75rem', left: '50%', transform: 'translateX(-50%)', backgroundColor: '#dc2626', fontSize: '10px', fontWeight: 'bold', padding: '0.25rem 0.75rem', borderRadius: '9999px', textTransform: 'uppercase' }}>AI ROAST</span>
-              {isRoasting ? "Pensando un insulto..." : `"${roast}"`}
+
+            <div className="bg-gray-800/50 p-6 rounded-2xl italic text-lg mb-8 min-h-[120px] flex items-center justify-center border border-white/10 w-full relative">
+              <span className="absolute -top-3 left-4 bg-red-600 text-[10px] font-bold px-2 py-0.5 rounded uppercase">AI Roast</span>
+              {isRoasting ? (
+                <div className="flex gap-2"><div className="w-2 h-2 bg-white rounded-full animate-bounce"/><div className="w-2 h-2 bg-white rounded-full animate-bounce [animation-delay:0.2s]"/><div className="w-2 h-2 bg-white rounded-full animate-bounce [animation-delay:0.4s]"/></div>
+              ) : `"${roast}"`}
             </div>
-            <button onClick={(e) => { e.stopPropagation(); runCountdown(); }} style={{ backgroundColor: '#facc15', border: 'none', color: 'black', fontWeight: 900, padding: '1.25rem 3rem', borderRadius: '9999px', fontSize: '1.25rem', cursor: 'pointer', transition: 'transform 0.2s' }}>REINTENTAR</button>
+
+            <button 
+              onClick={(e) => { e.stopPropagation(); runCountdown(); }}
+              className="group relative bg-yellow-400 hover:bg-yellow-300 text-black font-black py-4 px-12 rounded-full transition-all shadow-[0_0_30px_rgba(234,179,8,0.4)] hover:scale-110 active:scale-95"
+            >
+              REINTENTAR
+              <span className="absolute -top-1 -right-1 flex h-4 w-4">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-yellow-400 opacity-75"></span>
+              </span>
+            </button>
           </div>
         )}
       </div>
-      <p style={{ marginTop: '1.5rem', color: '#4b5563', fontSize: '10px', fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
-        Netlify Production Build • Fixed Graphics • AI Enabled
-      </p>
+      <p className="mt-4 text-gray-500 text-[10px] font-mono tracking-widest uppercase">Precision Combat v2.1 • Hitbox: {HITBOX_MARGIN * 100}%</p>
     </div>
   );
 };
